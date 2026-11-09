@@ -57,6 +57,18 @@
     await Promise.all(jobs);
     img.balcony = img.pigeon.map(buildBalcony);
     img.balcony.forEach(buildMask);
+    img.brolly = buildBrolly(img.hero_wave[0]);
+  }
+
+  // The open umbrella on its own (canopy + shaft) cut from the waving hero frame,
+  // so it can tear away from his hand when he crashes.
+  function buildBrolly(src) {
+    const c = document.createElement("canvas");
+    c.width = src.width; c.height = 23;
+    const g = c.getContext("2d");
+    g.drawImage(src, 0, 0, src.width, 13, 0, 0, src.width, 13);   // canopy
+    g.drawImage(src, 15, 13, 3, 10, 15, 13, 3, 10);              // shaft
+    return c;
   }
 
   // Small iron balcony (drawn in code to match the fire escapes) with a pigeon on the rail.
@@ -151,6 +163,7 @@
     st.hero.x = ALLEY_MID; st.hero.dir = 1;
     st.speed = 55; st.hspeed = 70; st.toNext = 70;
     st.obs = []; st.fx = []; st.deadT = 0; st.shake = 0; st.scorePop = 0;
+    st.body = null; st.brolly = null; st.flash = 0; st.hitStop = 0;
   }
 
   // ---------- obstacles ----------
@@ -267,7 +280,11 @@
 
   // ---------- update ----------
   function die() {
-    st.mode = "dying"; st.deadT = 0; st.shake = 0.35;
+    const h = st.hero;
+    st.mode = "dying"; st.deadT = 0; st.shake = 0.3; st.hitStop = 0.14; st.flash = 1;
+    // the umbrella is ripped upward by the wind, he tumbles down out of the frame
+    st.body = { x: h.x, y: HERO_Y + 24, vx: -h.dir * 18, vy: -95, rot: 0, vr: h.dir * 6.5, flip: h.dir < 0 };
+    st.brolly = { x: h.x + h.dir * 6, y: HERO_Y + 8, vx: h.dir * 30, vy: -115, rot: 0, vr: -h.dir * 2.2, flip: h.dir < 0 };
     sfx.hit();
     try { navigator.vibrate && navigator.vibrate(40); } catch (e) {}
     if (st.score > best) {
@@ -326,9 +343,19 @@
         if (overlap(hr, { x: Math.round(o.x), y: Math.round(o.y), im: f, flip: o.flip })) { die(); break; }
       }
       st.obs = st.obs.filter((o) => o.y > -60 && o.x > -60 && o.x < W + 60);
-    } else if (st.mode === "dying") {
+    } else if (st.mode === "dying" || st.mode === "over") {
+      if (st.hitStop > 0) { st.hitStop -= dt; return; }
+      st.flash = Math.max(0, st.flash - dt * 6);
+      const b = st.body, u = st.brolly;
+      if (b) {
+        b.vy += 560 * dt; b.y += b.vy * dt; b.x += b.vx * dt; b.rot += b.vr * dt;
+        u.vy = Math.max(-190, u.vy - 45 * dt);                    // keeps catching wind
+        u.y += u.vy * dt; u.x += (u.vx + Math.sin(st.deadT * 7) * 40) * dt;
+        u.rot = Math.sin(st.deadT * 5) * 0.5 + u.vr * st.deadT * 0.3;
+      }
+      if (st.mode === "over") return;
       st.deadT += dt;
-      if (st.deadT > 1.1) {
+      if (st.deadT > 1.0 && (!b || b.y > H + 40)) {
         st.mode = "over"; st.t = 0;
         if (st.newBest) sfx.best();
       }
@@ -408,12 +435,20 @@
     if (st.mode === "play") {
       const r = heroRect();
       draw(r.im, r.x, r.y, r.flip);
-    } else if (st.mode === "dying" || st.mode === "over") {
-      const fr = img.hero_death;
-      const i = Math.min(fr.length - 1, (st.deadT / 0.3) | 0);
-      const im = fr[st.mode === "over" ? fr.length - 1 : i];
-      draw(im, h.x - im.width / 2, HERO_Y + 6, h.dir < 0);
+    } else if ((st.mode === "dying" || st.mode === "over") && st.body) {
+      const u = st.brolly, b = st.body;
+      if (u.y > -40) drawRot(img.brolly, u.x, u.y, u.rot, u.flip);
+      if (b.y < H + 40) drawRot(img.hero_death[1], b.x, b.y, b.rot, b.flip);
     }
+  }
+
+  function drawRot(image, cx, cy, ang, flip) {
+    ctx.save();
+    ctx.translate(Math.round(cx) * S, Math.round(cy) * S);
+    ctx.rotate(ang);
+    ctx.scale(flip ? -S : S, S);
+    ctx.drawImage(image, -Math.round(image.width / 2), -Math.round(image.height / 2));
+    ctx.restore();
   }
 
   function drawFx() {
@@ -500,6 +535,10 @@
     drawFx();
     drawHero();
     ctx.restore();
+    if (st.flash > 0) {
+      ctx.save(); ctx.globalAlpha = st.flash * 0.6; ctx.fillStyle = "#f4f4f4";
+      ctx.fillRect(0, 0, W * S, H * S); ctx.restore();
+    }
     drawUI();
   }
 
