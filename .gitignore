@@ -1,6 +1,6 @@
 __pycache__/
 .DS_Store
 node_modules/
-www/
-android/
+/www/
+/android/
 package-lock.json
