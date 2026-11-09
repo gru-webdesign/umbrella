@@ -474,7 +474,10 @@
   }
 
   function fit() {
-    const k = Math.min(window.innerWidth / W, window.innerHeight / H);
+    const box = canvas.parentElement;
+    const bw = (box && box.clientWidth) || window.innerWidth;
+    const bh = (box && box.clientHeight) || window.innerHeight;
+    const k = Math.min(bw / W, bh / H);
     canvas.style.width = Math.floor(W * k) + "px";
     canvas.style.height = Math.floor(H * k) + "px";
   }
