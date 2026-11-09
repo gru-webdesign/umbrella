@@ -18,7 +18,7 @@
 
   // ---------- assets ----------
   const SPRITES = {
-    hero_drift: 2, hero_wave: 2, hero_death: 3, hero_dive: 2,
+    hero_drift: 2, hero_wave: 2, hero_death: 3, hero_dive: 2, cloud: 4,
     bird: 2, balloon: 2, plane: 1, dish: 1, pigeon: 2,
   };
   const BACKS = ["bg_day", "bg_dusk", "bg_menu", "facade_left", "facade_right"];
@@ -100,8 +100,19 @@
       try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; }
     }
     if (actx && actx.state === "suspended") actx.resume();
+    if (actx && window.Music && !window.Music.playing) window.Music.start(actx, 0);
     return actx;
   }
+  let musicVol = -1;
+  function syncMusic() {
+    if (!actx || !window.Music) return;
+    const v = muted ? 0 : st.mode === "over" || st.mode === "dying" ? 0.12 : 0.4;
+    if (v !== musicVol) { window.Music.setVolume(v); musicVol = v; }
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (!actx) return;
+    if (document.hidden) actx.suspend(); else actx.resume();
+  });
   function tone(freq, dur, type = "square", vol = 0.08, slide = 0) {
     if (muted) return;
     const a = audio(); if (!a) return;
@@ -151,6 +162,7 @@
     obs: [],
     fx: [],             // particles
     decor: [],          // background planes
+    clouds: [],         // single drifting clouds in the alley
     wallY: 0,
     shake: 0,
     deadT: 0,
@@ -314,6 +326,15 @@
     for (const d of st.decor) { d.x += d.vx * dt; d.y -= scroll * 0.15 * dt; }
     st.decor = st.decor.filter((d) => d.x > -40 && d.x < W + 40 && d.y > -20);
 
+    // a few loose clouds drifting up slower than the walls
+    while (st.clouds.length < 4) {
+      const first = st.clouds.length < 4 && st.t < 0.1;
+      st.clouds.push({ i: (Math.random() * 4) | 0, x: rand(WALL_L - 8, W - WALL_R - 20), y: first ? rand(0, H) : H + rand(10, 120), k: rand(0.25, 0.45) });
+    }
+    for (const c of st.clouds) c.y -= scroll * c.k * dt;
+    st.clouds = st.clouds.filter((c) => c.y > -30);
+    syncMusic();
+
     for (const p of st.fx) { p.x += p.vx * dt; p.y += p.vy * dt - scroll * dt * 0.5; p.vy += (p.g || 0) * dt; p.life -= dt; }
     st.fx = st.fx.filter((p) => p.life > 0);
 
@@ -398,7 +419,8 @@
       draw(img.bg_day, 0, 0);
       if (st.sky > 0.01) draw(img.bg_dusk, 0, 0, false, st.sky);
     }
-    for (const d of st.decor) draw(img.plane[0], d.x, d.y, d.vx < 0, 0.8);
+    for (const d of st.decor) draw(img.plane[0], d.x, d.y, d.vx > 0, 0.8); // sprite faces left
+    if (st.mode !== "menu") for (const c of st.clouds) draw(img.cloud[c.i], c.x, c.y, false, 0.9);
     if (st.mode === "menu") return;
 
     // free-flying things first, so birds come out from behind the buildings

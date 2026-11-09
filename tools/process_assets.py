@@ -157,6 +157,29 @@ def facade(src, box, s, name):
     return save(np.ascontiguousarray(out), f"{name}.png")
 
 
+def clouds(src, count, name):
+    """Cut single clouds out of the cloud layer so they can drift one by one."""
+    a = load(src)
+    s = a.shape[1] // 180
+    out = downscale(a, ~magenta_mask(a), s)
+    lab, n = ndimage.label(out[..., 3] > 0)
+    found = []
+    for i, sl in enumerate(ndimage.find_objects(lab), 1):
+        h, w = sl[0].stop - sl[0].start, sl[1].stop - sl[1].start
+        inside = sl[1].start > 0 and sl[1].stop < out.shape[1] and sl[0].start > 0 and sl[0].stop < out.shape[0]
+        if inside and 12 <= w <= 40:
+            c = out[sl].copy()
+            c[lab[sl] != i, 3] = 0
+            found.append(c)
+    found.sort(key=lambda c: c.shape[1])
+    # spread the picks over small..large
+    picks = [found[round(k * (len(found) - 1) / (count - 1))] for k in range(count)]
+    for k, c in enumerate(picks):
+        save(np.ascontiguousarray(c), f"{name}_{k}.png")
+    print(f"{name}: {count} of {len(found)} clouds, widths {[c.shape[1] for c in picks]}")
+    return {"frames": count}
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     meta = {
@@ -166,6 +189,7 @@ def main():
         "hero_death": sheet("hero_death.jpg", 3, 40, "hero_death", drop_below=0.66),
         "bird": sheet("bird.jpg", 2, 14, "bird"),
         "balloon": sheet("balloon.jpg", 2, 30, "balloon"),
+        "cloud": clouds("layer_clouds.jpg", 4, "cloud"),
         "plane": sheet("plane.jpg", 1, 9, "plane"),
         "dish": sheet("dish.jpg", 1, 26, "dish"),
         "pigeon": sheet("pigeon_roof.jpg", 2, 15, "pigeon", keep_above=0.5),
