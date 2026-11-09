@@ -1,0 +1,71 @@
+{
+ "hero_drift": {
+  "frames": 2,
+  "w": 37,
+  "h": 46
+ },
+ "hero_wave": {
+  "frames": 2,
+  "w": 30,
+  "h": 46
+ },
+ "hero_dive": {
+  "frames": 2,
+  "w": 29,
+  "h": 39
+ },
+ "hero_death": {
+  "frames": 3,
+  "w": 28,
+  "h": 40
+ },
+ "bird": {
+  "frames": 2,
+  "w": 15,
+  "h": 14
+ },
+ "balloon": {
+  "frames": 2,
+  "w": 12,
+  "h": 29
+ },
+ "plane": {
+  "frames": 1,
+  "w": 25,
+  "h": 8
+ },
+ "dish": {
+  "frames": 1,
+  "w": 33,
+  "h": 25
+ },
+ "pigeon_roof": {
+  "frames": 2,
+  "w": 23,
+  "h": 21
+ },
+ "bg_day": {
+  "w": 180,
+  "h": 320
+ },
+ "bg_dusk": {
+  "w": 180,
+  "h": 320
+ },
+ "bg_menu": {
+  "w": 180,
+  "h": 320
+ },
+ "bg_street": {
+  "w": 180,
+  "h": 320
+ },
+ "clouds": {
+  "w": 180,
+  "h": 320
+ },
+ "roofs": {
+  "w": 180,
+  "h": 320
+ }
+}
