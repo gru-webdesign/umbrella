@@ -3,7 +3,9 @@
 (() => {
   "use strict";
 
-  const W = 180, H = 320;          // logical resolution
+  const W = 180;                   // logical width; height follows the screen shape
+  let H = 320;                     // 320..480, set by fit() so the game fills the screen
+  let TOP = 0;                     // logical px hidden under a notch / status bar
   const S = 4;                     // internal render scale (crisp text, pixel-exact sprites)
   const HERO_Y = 92;               // fixed screen height of the hero
   const WALL_L = 30, WALL_R = 28;  // building facades on each side (sprite widths)
@@ -541,6 +543,16 @@
     ctx.restore();
   }
 
+  // a 180x320 background stretched to cover the current screen (centred, nearest-neighbour)
+  function drawCover(image, alpha = 1) {
+    const k = Math.max(W / image.width, H / image.height);
+    const w = image.width * k, h = image.height * k;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(image, ((W - w) / 2) * S, ((H - h) / 2) * S, w * S, h * S);
+    ctx.restore();
+  }
+
   function text(str, x, y, size, color = "#fff", align = "center", outline = "#1a1c2c") {
     ctx.save();
     ctx.font = `700 ${size * S}px "Pixelify Sans", monospace`;
@@ -557,10 +569,10 @@
 
   function drawWorld() {
     if (st.mode === "menu") {
-      draw(img.bg_menu, 0, 0);
+      drawCover(img.bg_menu);
     } else {
-      draw(img.bg_day, 0, 0);
-      if (st.sky > 0.01) draw(img.bg_dusk, 0, 0, false, st.sky);
+      drawCover(img.bg_day);
+      if (st.sky > 0.01) drawCover(img.bg_dusk, st.sky);
     }
     for (const d of st.decor) draw(img.plane[0], d.x, d.y, d.vx > 0, 0.8); // sprite faces left
     if (st.mode !== "menu") for (const c of st.clouds) draw(img.cloud[c.i], c.x, c.y, false, 0.9);
@@ -627,7 +639,7 @@
   }
 
   function soundIcon() {
-    const x = W - 18, y = 6;
+    const x = W - 18, y = 6 + TOP;
     ctx.save();
     ctx.fillStyle = "rgba(26,28,44,0.55)";
     ctx.fillRect(x * S, y * S, 13 * S, 13 * S);
@@ -649,21 +661,21 @@
     if (st.mode === "menu") {
       const bob = Math.sin(st.t * 2.2) * 3;
       const fr = img.hero_wave[((st.t * 3) | 0) % 2];
-      draw(fr, W / 2 - fr.width / 2, 120 + bob);
-      text("UMBRELLA", W / 2, 46, 20, "#ffcd75");
-      text("FREE FALL", W / 2, 68, 20, "#f77622");
-      text("Tap to switch the wind", W / 2, 90, 7, "#fff");
-      if (((st.t * 2) | 0) % 2 === 0) text("TAP TO START", W / 2, 196, 10, "#fff");
-      if (best > 0) text(`BEST ${best}`, W / 2, 214, 8, "#73eff7");
+      draw(fr, W / 2 - fr.width / 2, H * 0.4 + bob);
+      text("UMBRELLA", W / 2, TOP + H * 0.15, 20, "#ffcd75");
+      text("FREE FALL", W / 2, TOP + H * 0.15 + 22, 20, "#f77622");
+      text("Tap to switch the wind", W / 2, TOP + H * 0.15 + 44, 7, "#fff");
+      if (((st.t * 2) | 0) % 2 === 0) text("TAP TO START", W / 2, H * 0.62, 10, "#fff");
+      if (best > 0) text(`BEST ${best}`, W / 2, H * 0.62 + 18, 8, "#73eff7");
       soundIcon();
       return;
     }
 
     if (st.mode === "play" || st.mode === "dying") {
       const pop = 1 + st.scorePop * 0.25;
-      text(String(st.score), W / 2, 24, 18 * pop, "#fff");
+      text(String(st.score), W / 2, TOP + 24, 18 * pop, "#fff");
       if (st.mode === "play" && st.score === 0 && st.t < 30) {
-        text("tap = flip the wind", W / 2, 300, 7, "#fff");
+        text("tap = flip the wind", W / 2, H - 22, 7, "#fff");
       }
       if (st.toast && st.mode === "play") {
         const k = st.toast.t, y = 140 - Math.min(1, k * 4) * 8;
@@ -672,7 +684,7 @@
       const g = st.gust;
       if (st.mode === "play" && g && (g.phase === "warn" || g.phase === "blow")) {
         const blink = g.phase === "blow" || ((st.t * 8) | 0) % 2;
-        if (blink) text(g.dir > 0 ? "GUST >>>" : "<<< GUST", W / 2, 50, 9, g.phase === "blow" ? "#73eff7" : "#fff");
+        if (blink) text(g.dir > 0 ? "GUST >>>" : "<<< GUST", W / 2, TOP + 50, 9, g.phase === "blow" ? "#73eff7" : "#fff");
       }
     }
 
@@ -680,7 +692,7 @@
       ctx.save();
       ctx.fillStyle = "rgba(26,28,44,0.45)";
       ctx.fillRect(0, 0, W * S, H * S);
-      const px = 24, py = 150, pw = W - 48, ph = 108;
+      const px = 24, pw = W - 48, ph = 108, py = Math.round((H - ph) / 2) + 14;
       ctx.fillStyle = "#29366f";
       ctx.fillRect(px * S, py * S, pw * S, ph * S);
       ctx.strokeStyle = "#1a1c2c"; ctx.lineWidth = 2 * S;
@@ -688,7 +700,7 @@
       ctx.strokeStyle = "#41a6f6"; ctx.lineWidth = 1 * S;
       ctx.strokeRect((px + 3) * S, (py + 3) * S, (pw - 6) * S, (ph - 6) * S);
       ctx.restore();
-      text("GAME OVER", W / 2, 62, 18, "#e43b44");
+      text("GAME OVER", W / 2, py - 26, 18, "#e43b44");
       text("SCORE", W / 2 - 34, py + 18, 7, "#94b0c2");
       text("BEST", W / 2 + 34, py + 18, 7, "#94b0c2");
       text(String(st.score), W / 2 - 34, py + 38, 18, "#fff");
@@ -730,9 +742,19 @@
     const box = canvas.parentElement;
     const bw = (box && box.clientWidth) || window.innerWidth;
     const bh = (box && box.clientHeight) || window.innerHeight;
+    // width always fills; the logical height grows with taller phones (up to 480)
+    H = Math.max(320, Math.min(480, Math.round((W * bh) / bw)));
     const k = Math.min(bw / W, bh / H);
-    canvas.style.width = Math.floor(W * k) + "px";
-    canvas.style.height = Math.floor(H * k) + "px";
+    if (canvas.height !== H * S) {
+      canvas.height = H * S;
+      ctx.imageSmoothingEnabled = false;
+    }
+    canvas.style.width = Math.round(W * k) + "px";
+    canvas.style.height = Math.round(H * k) + "px";
+    // keep the score clear of a camera notch
+    const probe = document.getElementById("safe-top");
+    const inset = probe ? probe.getBoundingClientRect().height : 0;
+    TOP = Math.ceil(inset / k);
   }
   window.addEventListener("resize", fit);
   fit();

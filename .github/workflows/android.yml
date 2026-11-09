@@ -38,6 +38,9 @@ jobs:
       - name: Portrait only
         run: sed -i '0,/<activity/s//<activity android:screenOrientation="portrait"/' android/app/src/main/AndroidManifest.xml
 
+      - name: Full screen (hide status and navigation bars)
+        run: cp tools/android/MainActivity.java android/app/src/main/java/com/gruwebdesign/umbrellafreefall/MainActivity.java
+
       - name: Sync web files and plugins
         run: npx cap sync android
 
