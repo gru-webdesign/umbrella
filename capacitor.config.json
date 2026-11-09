@@ -1,0 +1,9 @@
+{
+  "appId": "com.gruwebdesign.umbrellafreefall",
+  "appName": "Umbrella Free Fall",
+  "webDir": "www",
+  "backgroundColor": "#1a1c2c",
+  "android": {
+    "backgroundColor": "#1a1c2c"
+  }
+}

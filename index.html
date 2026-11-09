@@ -1,24 +1,39 @@
 <!doctype html>
-<html lang="sr">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#1a1c2c">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Kišobran</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@700&display=swap" rel="stylesheet">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="One-tap pixel art faller. Tap to switch the wind and drift through the alley.">
+  <title>Umbrella Free Fall</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preload" href="fonts/pixelify-sans-700.woff2" as="font" type="font/woff2" crossorigin>
   <style>
+    @font-face {
+      font-family: "Pixelify Sans";
+      src: url("fonts/pixelify-sans-700.woff2") format("woff2");
+      font-weight: 700;
+      font-display: block;
+    }
     html, body {
       margin: 0; height: 100%; width: 100%;
       background: #1a1c2c;
       overflow: hidden;
       touch-action: none;
+      overscroll-behavior: none;
       -webkit-user-select: none; user-select: none;
       -webkit-tap-highlight-color: transparent;
     }
-    body { display: flex; align-items: center; justify-content: center; }
+    body {
+      box-sizing: border-box;
+      padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    }
+    #stage { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
     canvas {
       display: block;
       image-rendering: pixelated;
@@ -28,8 +43,17 @@
   </style>
 </head>
 <body>
-  <canvas id="game" aria-label="Kišobran — igra"></canvas>
+  <div id="stage">
+    <canvas id="game" aria-label="Umbrella Free Fall. Tap or press space to switch the wind."></canvas>
+  </div>
   <script src="src/music.js"></script>
   <script src="src/game.js"></script>
+  <script>
+    // inside the Android app: hide the status bar for a full-screen game
+    try { window.Capacitor && window.Capacitor.Plugins.StatusBar && window.Capacitor.Plugins.StatusBar.hide(); } catch (e) {}
+    if ("serviceWorker" in navigator && location.protocol === "https:") {
+      window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+    }
+  </script>
 </body>
 </html>

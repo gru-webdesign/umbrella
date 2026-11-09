@@ -1,4 +1,4 @@
-// Kišobran — one-tap endless faller.
+// Umbrella Free Fall — one-tap endless faller.
 // Tap flips the wind: the umbrella carries you left or right while the city rises past you.
 (() => {
   "use strict";
@@ -8,7 +8,8 @@
   const HERO_Y = 92;               // fixed screen height of the hero
   const WALL_L = 30, WALL_R = 28;  // building facades on each side (sprite widths)
   const ALLEY_MID = (WALL_L + W - WALL_R) / 2;
-  const BEST_KEY = "kisobran.best";
+  const BEST_KEY = "uff.best";
+  const MUTE_KEY = "uff.muted";
 
   const canvas = document.getElementById("game");
   canvas.width = W * S;
@@ -29,7 +30,7 @@
     return new Promise((res, rej) => {
       const i = new Image();
       i.onload = () => res(i);
-      i.onerror = () => rej(new Error("Ne mogu da učitam " + src));
+      i.onerror = () => rej(new Error("Could not load " + src));
       i.src = src;
     });
   }
@@ -94,7 +95,7 @@
   // ---------- audio (tiny synth, no files) ----------
   let actx = null;
   let muted = false;
-  try { muted = localStorage.getItem("kisobran.muted") === "1"; } catch (e) {}
+  try { muted = localStorage.getItem(MUTE_KEY) === "1"; } catch (e) {}
   function audio() {
     if (!actx) {
       try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; }
@@ -148,7 +149,7 @@
   const rand = (a, b) => a + Math.random() * (b - a);
   const pick = (arr) => arr[(Math.random() * arr.length) | 0];
   let best = 0;
-  try { best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0; } catch (e) {}
+  try { best = parseInt(localStorage.getItem(BEST_KEY) || localStorage.getItem("kisobran.best") || "0", 10) || 0; } catch (e) {}
 
   const st = {
     mode: "loading",  // loading | menu | play | dying | over
@@ -176,6 +177,9 @@
     st.speed = 55; st.hspeed = 70; st.toNext = 70;
     st.obs = []; st.fx = []; st.deadT = 0; st.shake = 0; st.scorePop = 0;
     st.body = null; st.brolly = null; st.flash = 0; st.hitStop = 0;
+    st.fenceRun = 0; st.hole = ALLEY_MID; st.fenceShift = 0;
+    st.gust = { phase: "idle", t: rand(5, 8), dir: 1 };
+    st.toast = null; st.stage = 0;
   }
 
   // ---------- obstacles ----------
@@ -184,49 +188,162 @@
     return fr[((o.anim * o.fps) | 0) % fr.length];
   }
 
+  // ---------- obstacle rows ----------
+  // Every row is checked before it spawns: there must be a free corridor at least
+  // CLEAR px wide, and rows are spaced in time so the hero can always reach it.
+  const CLEAR = 48;                    // hero umbrella is 37 px wide + margin
+  const ALLEY_L = WALL_L, ALLEY_R = W - WALL_R;
+
   // things mounted on a facade: a satellite dish or a balcony with a pigeon
-  function addWall(side, y) {
-    const kind = Math.random() < 0.5 ? "dish" : "balcony";
+  function wallItem(side, dy = 0, kind = Math.random() < 0.5 ? "dish" : "balcony") {
     const f = img[kind][0];
-    st.obs.push({
-      kind, wall: true, x: side < 0 ? WALL_L - 2 : W - WALL_R - f.width + 2, y, vx: 0, vy: 0,
-      flip: side > 0, anim: Math.random() * 3, fps: kind === "balcony" ? 1.3 : 2, scored: false,
-    });
+    const x = side < 0 ? WALL_L - 2 : W - WALL_R - f.width + 2;
+    return {
+      kind, wall: true, x, dy, vx: 0, flip: side > 0,
+      anim: Math.random() * 3, fps: kind === "balcony" ? 1.3 : 2,
+      span: [x, x + f.width], h: f.height,
+    };
   }
-  function addBalloon(x, y) {
-    st.obs.push({ kind: "balloon", x: x - 6, y, vx: rand(-6, 6), vy: -rand(12, 22), flip: Math.random() < 0.5, anim: Math.random(), fps: 2, scored: false });
+  // balloons ride with the world and sway a little sideways
+  function balloon(cx, dy = 0, amp = 4) {
+    const f = img.balloon[0];
+    const base = Math.max(ALLEY_L + amp, Math.min(ALLEY_R - f.width - amp, cx - f.width / 2));
+    return {
+      kind: "balloon", x: base, dy, vx: 0, flip: Math.random() < 0.5, anim: Math.random() * 3, fps: 2,
+      sway: { base, amp, ph: rand(0, 6) }, span: [base - amp, base + f.width + amp], h: f.height,
+    };
   }
-  function addBird(y) {
-    const fromLeft = Math.random() < 0.5;
-    const v = rand(35, 55) + Math.min(40, st.score * 0.8);
-    st.obs.push({ kind: "bird", x: fromLeft ? WALL_L - 15 : W - WALL_R, y, vx: fromLeft ? v : -v, vy: 0, flip: !fromLeft, anim: 0, fps: 8, scored: false });
+  // birds patrol one half of the alley, so the other half is always open
+  function bird(side, dy = 0) {
+    const f = img.bird[0], range = 40;
+    const minX = side < 0 ? ALLEY_L + 1 : ALLEY_R - f.width - 1 - range;
+    const maxX = minX + range;
+    const v = rand(30, 42) + Math.min(20, st.score * 0.3);
+    const goRight = Math.random() < 0.5;
+    return {
+      kind: "bird", x: rand(minX, maxX), dy, vx: goRight ? v : -v, flip: !goRight,
+      anim: 0, fps: 8, patrol: [minX, maxX], span: [minX, maxX + f.width], h: f.height,
+    };
+  }
+
+  function widestGap(items) {
+    const spans = items.map((o) => o.span).sort((a, b) => a[0] - b[0]);
+    let edge = ALLEY_L, widest = 0;
+    for (const [a, b] of spans) { widest = Math.max(widest, a - edge); edge = Math.max(edge, b); }
+    return Math.max(widest, ALLEY_R - edge);
+  }
+
+  const side = () => (Math.random() < 0.5 ? -1 : 1);
+
+  // Difficulty ramps in stages; each new stage is announced once.
+  const STAGES = [
+    { at: 5,  msg: "BALLOONS!" },
+    { at: 10, msg: "BIRDS & GATES" },
+    { at: 15, msg: "BALLOON FENCES" },
+    { at: 20, msg: "TIGHTER SQUEEZE" },
+    { at: 30, msg: "WIND GUSTS!" },
+    { at: 45, msg: "STORM ALLEY" },
+  ];
+  const GUST = 38;                     // px/s sideways push during a gust
+  const gustsOn = () => st.score >= 30;
+  // sideways speed you can count on even when a gust blows against you
+  const safeH = () => st.hspeed - (gustsOn() ? GUST : 0);
+
+  function buildRow() {
+    const s = st.score;
+    const pool = ["wall", "wall", "wall"];
+    if (s >= 5) pool.push("balloon", "balloon");
+    if (s >= 10) pool.push("bird", "bird", "gate");
+    if (s >= 20) pool.push("squeeze", "squeeze", "pair");
+    if (s >= 25) pool.push("nest");
+    if (s >= 45) pool.push("nest", "gate");
+    const sd = side();
+    switch (pick(pool)) {
+      case "wall": return [wallItem(sd)];
+      case "balloon": return [balloon(rand(ALLEY_L + 10, ALLEY_R - 10))];
+      case "bird": return [bird(sd)];
+      case "gate": return [wallItem(-1), wallItem(1)];
+      case "squeeze": // wall on one side, balloon hugging the other wall
+        return [wallItem(sd), balloon(sd < 0 ? rand(ALLEY_R - 22, ALLEY_R - 12) : rand(ALLEY_L + 12, ALLEY_L + 22), 4)];
+      case "pair": { // two balloons on the same half
+        const c = sd < 0 ? ALLEY_L + 22 : ALLEY_R - 22;
+        return [balloon(c + rand(-8, 8)), balloon(c + rand(-8, 8), 20)];
+      }
+      case "nest": return [wallItem(sd), bird(sd, 18)];
+    }
+    return [wallItem(sd)];
+  }
+
+  // A Flappy-style "pipe": everything is blocked except one hole.
+  // Wall pieces cover the edges, a row of balloons fills the rest.
+  function fenceRow(hx, cw) {
+    const row = [];
+    const fill = (sd, len) => {
+      if (len < 14) return;
+      let cur = 0;                               // distance covered from the wall
+      if (len >= 30) {
+        const kind = len >= 31 ? pick(["dish", "balcony"]) : "balcony";
+        const w = wallItem(sd, rand(0, 4), kind);
+        row.push(w);
+        cur = w.span[1] - w.span[0] - 2;
+      }
+      while (len - cur >= 14) {
+        const c = cur + 8;
+        row.push(balloon(sd < 0 ? ALLEY_L + c : ALLEY_R - c, rand(0, 6), 2));
+        cur += 21;
+      }
+    };
+    fill(-1, hx - cw / 2 - ALLEY_L);
+    fill(1, ALLEY_R - (hx + cw / 2));
+    return row;
   }
 
   function spawn() {
-    const y = H + 6, s = st.score;
-    const pool = ["wall", "wall"];
-    if (s >= 3) pool.push("balloons");
-    if (s >= 6) pool.push("bird", "bird");
-    if (s >= 12) pool.push("gate");
-    if (s >= 20) pool.push("squeeze", "squeeze");
-    switch (pick(pool)) {
-      case "wall": addWall(Math.random() < 0.5 ? -1 : 1, y); break;
-      case "balloons": {
-        const n = s > 15 ? 2 : 1;
-        for (let i = 0; i < n; i++) addBalloon(rand(WALL_L + 14, W - WALL_R - 14), y + i * 18);
-        break;
-      }
-      case "bird": addBird(y); break;
-      case "gate": addWall(-1, y); addWall(1, y); break;
-      case "squeeze": {
-        const side = Math.random() < 0.5 ? -1 : 1;
-        addWall(side, y);
-        addBalloon(side < 0 ? rand(100, 135) : rand(45, 80), y + 4);
-        break;
-      }
+    const s = st.score;
+    let row = null, fence = false;
+    if (st.fenceRun === 0 && s >= 15 && Math.random() < Math.min(0.4, 0.14 + (s - 15) * 0.007)) {
+      st.fenceRun = 3 + ((Math.random() * (2 + s / 25)) | 0);
+      st.hole = rand(ALLEY_L + 40, ALLEY_R - 40);
+      st.fenceShift = ALLEY_R - ALLEY_L;           // the first fence follows a normal gap
     }
-    const lo = Math.max(44, 84 - s * 0.9);
-    st.toNext = rand(lo, lo + 36);
+    if (st.fenceRun > 0) {
+      const cw = Math.max(CLEAR + 4, 78 - (s - 15) * 0.55);
+      const lo = ALLEY_L + cw / 2, hi = ALLEY_R - cw / 2;
+      const shift = Math.min(st.fenceShift, hi - lo);
+      const mag = rand(Math.min(18, shift), shift);
+      let hx = st.hole + (Math.random() < 0.5 ? -mag : mag);
+      if (hx < lo || hx > hi) hx = st.hole - (hx - st.hole);   // bounce back inside
+      hx = Math.max(lo, Math.min(hi, hx));
+      const r = fenceRow(hx, cw);
+      if (widestGap(r) >= CLEAR) { row = r; fence = true; st.hole = hx; }
+      st.fenceRun--;
+    }
+    for (let tries = 0; tries < 10 && !row; tries++) {
+      const r = buildRow();
+      if (widestGap(r) >= CLEAR) row = r;
+    }
+    if (!row) row = [wallItem(side())];
+
+    const y = H + 6;
+    let rowH = 0, last = row[0];
+    for (const o of row) {
+      o.y = y + o.dy; o.scored = true;
+      if (o.dy + o.h >= rowH) { rowH = o.dy + o.h; last = o; }
+      st.obs.push(o);
+    }
+    last.scored = false;   // one point per row, given when its lowest piece passes
+
+    if (fence && st.fenceRun > 0) {
+      // inside a fence run: quicker rhythm, next hole is only as far as you can reach
+      const t = rand(0.85, 1.1);
+      st.toNext = rowH + st.speed * t;
+      st.fenceShift = Math.max(16, safeH() * (t - 0.3));
+    } else {
+      // time to cross most of the alley plus reaction time, then a little slack
+      const tGap = (ALLEY_R - ALLEY_L - CLEAR) / safeH() + 0.25 + rand(0, 0.35);
+      st.toNext = rowH + st.speed * tGap;
+    }
+    st.lastRowGap = widestGap(row);
   }
 
   // ---------- collision (pixel-perfect) ----------
@@ -269,7 +386,7 @@
       const lx = ((e.clientX - r.left) / r.width) * W, ly = ((e.clientY - r.top) / r.height) * H;
       if (lx > W - 26 && ly < 26) {
         muted = !muted;
-        try { localStorage.setItem("kisobran.muted", muted ? "1" : "0"); } catch (err) {}
+        try { localStorage.setItem(MUTE_KEY, muted ? "1" : "0"); } catch (err) {}
         return;
       }
     }
@@ -305,8 +422,22 @@
     }
   }
 
+  function updateGust(dt) {
+    const g = st.gust;
+    if (!gustsOn()) return;
+    g.t -= dt;
+    if (g.phase === "blow" && Math.random() < dt * 30) {
+      st.fx.push({ kind: "wind", x: g.dir > 0 ? ALLEY_L - 6 : ALLEY_R - 2, y: rand(10, H - 10), vx: g.dir * rand(140, 220), vy: 0, life: 0.6, max: 0.6 });
+    }
+    if (g.t > 0) return;
+    if (g.phase === "idle") { g.phase = "warn"; g.t = 0.9; g.dir = side(); tone(300, 0.25, "sawtooth", 0.03, 200); }
+    else if (g.phase === "warn") { g.phase = "blow"; g.t = 1.3; noise(0.5, 0.06); }
+    else { g.phase = "idle"; g.t = rand(6, 10) - Math.min(3, (st.score - 30) * 0.06); }
+  }
+
   function update(dt) {
     st.t += dt;
+    if (st.toast) { st.toast.t += dt; if (st.toast.t > 1.8) st.toast = null; }
     st.shake = Math.max(0, st.shake - dt);
     st.scorePop = Math.max(0, st.scorePop - dt * 4);
 
@@ -342,6 +473,8 @@
       const h = st.hero;
       h.frame = ((st.t * 5) | 0) % 2;
       h.x += h.dir * st.hspeed * dt;
+      updateGust(dt);
+      if (st.gust.phase === "blow") h.x += st.gust.dir * GUST * dt;
       const half = heroImage().width / 2;
       h.x = Math.max(WALL_L + half - 4, Math.min(W - WALL_R - half + 4, h.x));
 
@@ -350,13 +483,23 @@
 
       const hr = heroRect();
       for (const o of st.obs) {
-        o.y += (o.vy - st.speed) * dt;
-        o.x += o.vx * dt;
+        o.y -= st.speed * dt;
         o.anim += dt;
+        if (o.sway) o.x = o.sway.base + Math.sin(o.anim * 1.6 + o.sway.ph) * o.sway.amp;
+        else o.x += o.vx * dt;
+        if (o.patrol) {
+          if (o.x < o.patrol[0]) { o.x = o.patrol[0]; o.vx = Math.abs(o.vx); }
+          if (o.x > o.patrol[1]) { o.x = o.patrol[1]; o.vx = -Math.abs(o.vx); }
+          o.flip = o.vx < 0;
+        }
         const f = frameOf(o);
         if (!o.scored && o.y + f.height < HERO_Y + 10) {
           o.scored = true;
           st.score++; st.scorePop = 1;
+          if (st.stage < STAGES.length && st.score >= STAGES[st.stage].at) {
+            st.toast = { msg: STAGES[st.stage].msg, t: 0 };
+            st.stage++;
+          }
           st.speed = Math.min(150, 55 + st.score * 1.5);
           st.hspeed = Math.min(108, 70 + st.score * 0.7);
           sfx.point();
@@ -507,10 +650,11 @@
       const bob = Math.sin(st.t * 2.2) * 3;
       const fr = img.hero_wave[((st.t * 3) | 0) % 2];
       draw(fr, W / 2 - fr.width / 2, 120 + bob);
-      text("KIŠOBRAN", W / 2, 60, 22, "#ffcd75");
-      text("Tapni da promeniš vetar", W / 2, 84, 7, "#fff");
-      if (((st.t * 2) | 0) % 2 === 0) text("TAPNI ZA START", W / 2, 196, 10, "#fff");
-      if (best > 0) text(`REKORD ${best}`, W / 2, 214, 8, "#73eff7");
+      text("UMBRELLA", W / 2, 46, 20, "#ffcd75");
+      text("FREE FALL", W / 2, 68, 20, "#f77622");
+      text("Tap to switch the wind", W / 2, 90, 7, "#fff");
+      if (((st.t * 2) | 0) % 2 === 0) text("TAP TO START", W / 2, 196, 10, "#fff");
+      if (best > 0) text(`BEST ${best}`, W / 2, 214, 8, "#73eff7");
       soundIcon();
       return;
     }
@@ -519,7 +663,16 @@
       const pop = 1 + st.scorePop * 0.25;
       text(String(st.score), W / 2, 24, 18 * pop, "#fff");
       if (st.mode === "play" && st.score === 0 && st.t < 30) {
-        text("tap = vetar na drugu stranu", W / 2, 300, 6, "#fff");
+        text("tap = flip the wind", W / 2, 300, 7, "#fff");
+      }
+      if (st.toast && st.mode === "play") {
+        const k = st.toast.t, y = 140 - Math.min(1, k * 4) * 8;
+        if (k < 1.5 || ((k * 8) | 0) % 2) text(st.toast.msg, W / 2, y, 10, "#ffcd75");
+      }
+      const g = st.gust;
+      if (st.mode === "play" && g && (g.phase === "warn" || g.phase === "blow")) {
+        const blink = g.phase === "blow" || ((st.t * 8) | 0) % 2;
+        if (blink) text(g.dir > 0 ? "GUST >>>" : "<<< GUST", W / 2, 50, 9, g.phase === "blow" ? "#73eff7" : "#fff");
       }
     }
 
@@ -535,14 +688,14 @@
       ctx.strokeStyle = "#41a6f6"; ctx.lineWidth = 1 * S;
       ctx.strokeRect((px + 3) * S, (py + 3) * S, (pw - 6) * S, (ph - 6) * S);
       ctx.restore();
-      text("KRAJ", W / 2, 62, 20, "#e43b44");
-      text("POENI", W / 2 - 34, py + 18, 7, "#94b0c2");
-      text("REKORD", W / 2 + 34, py + 18, 7, "#94b0c2");
+      text("GAME OVER", W / 2, 62, 18, "#e43b44");
+      text("SCORE", W / 2 - 34, py + 18, 7, "#94b0c2");
+      text("BEST", W / 2 + 34, py + 18, 7, "#94b0c2");
       text(String(st.score), W / 2 - 34, py + 38, 18, "#fff");
       text(String(best), W / 2 + 34, py + 38, 18, "#ffcd75");
-      if (st.newBest) text("NOVI REKORD!", W / 2, py + 64, 9, ((st.t * 4) | 0) % 2 ? "#ffcd75" : "#fff");
-      else text(st.score >= best - 3 && best > 0 ? "Skoro! Još jednom." : "Probaj ponovo", W / 2, py + 64, 7, "#fff");
-      if (st.t > 0.6) text("TAPNI ZA NASTAVAK", W / 2, py + 88, 8, "#fff");
+      if (st.newBest) text("NEW BEST!", W / 2, py + 64, 9, ((st.t * 4) | 0) % 2 ? "#ffcd75" : "#fff");
+      else text(st.score >= best - 3 && best > 0 ? "So close! Once more." : "Try again", W / 2, py + 64, 7, "#fff");
+      if (st.t > 0.6) text("TAP TO CONTINUE", W / 2, py + 88, 8, "#fff");
       soundIcon();
     }
   }
@@ -595,5 +748,5 @@
   requestAnimationFrame(loop);
 
   // test hook
-  window.__kisobran = { st, spawn, flip };
+  window.__uff = window.__kisobran = { st, spawn, flip, buildRow, widestGap, CLEAR };
 })();

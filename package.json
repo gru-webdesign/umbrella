@@ -1,0 +1,17 @@
+{
+  "name": "umbrella-free-fall",
+  "version": "1.0.0",
+  "private": true,
+  "description": "One-tap pixel art faller. Tap to switch the wind.",
+  "scripts": {
+    "build:web": "node tools/build-web.mjs",
+    "serve": "python3 -m http.server 8000"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/status-bar": "^7.0.0"
+  }
+}
