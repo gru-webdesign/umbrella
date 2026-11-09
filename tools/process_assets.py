@@ -100,13 +100,15 @@ def save(rgba, name):
     return {"w": int(rgba.shape[1]), "h": int(rgba.shape[0])}
 
 
-def sheet(src, n, target_h, name, drop_below=None, flip=False):
+def sheet(src, n, target_h, name, drop_below=None, flip=False, keep_above=None):
     """Cut a sheet into n frames that share one scale and one canvas size."""
     a = load(src)
     keep = ~magenta_mask(a)
     keep = ndimage.binary_opening(keep, iterations=2)
     if drop_below is not None:
         keep[int(drop_below * keep.shape[0]) :, :] = False
+    if keep_above is not None:
+        keep[int(keep_above * keep.shape[0]) :, :] = False
     runs = frames_by_columns(keep, n)
     ys, _ = np.nonzero(keep)
     top, bot = ys.min(), ys.max() + 1
@@ -144,6 +146,17 @@ def background(src, name, keyed=False, size=(180, 320)):
     return save(np.ascontiguousarray(out), f"{name}.png")
 
 
+def facade(src, box, s, name):
+    """Cut a vertically tileable strip of building facade (box in source pixels)."""
+    a = load(src)
+    x0, y0, x1, y1 = box
+    crop = a[y0:y1, x0:x1]
+    out = downscale(crop, np.ones(crop.shape[:2], bool), s)
+    out[..., 3] = 255
+    print(f"{name}: {out.shape[1]}x{out.shape[0]} (scale 1/{s})")
+    return save(np.ascontiguousarray(out), f"{name}.png")
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     meta = {
@@ -155,13 +168,13 @@ def main():
         "balloon": sheet("balloon.jpg", 2, 30, "balloon"),
         "plane": sheet("plane.jpg", 1, 9, "plane"),
         "dish": sheet("dish.jpg", 1, 26, "dish"),
-        "pigeon_roof": sheet("pigeon_roof.jpg", 2, 22, "pigeon_roof"),
+        "pigeon": sheet("pigeon_roof.jpg", 2, 15, "pigeon", keep_above=0.5),
+        # one window column of each building, two window rows = one seamless tile
+        "facade_left": facade("bg_street.jpg", (120, 670, 300, 1270), 6, "facade_left"),
+        "facade_right": facade("bg_street.jpg", (1180, 690, 1350, 1290), 6, "facade_right"),
         "bg_day": background("bg_sky_day.jpg", "bg_day"),
         "bg_dusk": background("bg_sky_dusk.jpg", "bg_dusk"),
         "bg_menu": background("bg_sky_to_roofs.jpg", "bg_menu"),
-        "bg_street": background("bg_street_lamps.jpg", "bg_street"),
-        "clouds": background("layer_clouds.jpg", "clouds", keyed=True),
-        "roofs": background("layer_roofs.jpg", "roofs", keyed=True),
     }
     with open(os.path.join(OUT, "manifest.json"), "w") as f:
         json.dump(meta, f, indent=1)

@@ -6,6 +6,8 @@
   const W = 180, H = 320;          // logical resolution
   const S = 4;                     // internal render scale (crisp text, pixel-exact sprites)
   const HERO_Y = 92;               // fixed screen height of the hero
+  const WALL_L = 30, WALL_R = 28;  // building facades on each side (sprite widths)
+  const ALLEY_MID = (WALL_L + W - WALL_R) / 2;
   const BEST_KEY = "kisobran.best";
 
   const canvas = document.getElementById("game");
@@ -17,9 +19,9 @@
   // ---------- assets ----------
   const SPRITES = {
     hero_drift: 2, hero_wave: 2, hero_death: 3, hero_dive: 2,
-    bird: 2, balloon: 2, plane: 1, dish: 1, pigeon_roof: 2,
+    bird: 2, balloon: 2, plane: 1, dish: 1, pigeon: 2,
   };
-  const BACKS = ["bg_day", "bg_dusk", "bg_menu", "bg_street", "clouds", "roofs"];
+  const BACKS = ["bg_day", "bg_dusk", "bg_menu", "facade_left", "facade_right"];
   const img = {};      // name -> [frames] or single image
   const mask = new Map(); // image -> {w,h,a:Uint8Array}
 
@@ -53,6 +55,28 @@
     }
     for (const name of BACKS) jobs.push(loadImage(`assets/${name}.png`).then((im) => (img[name] = im)));
     await Promise.all(jobs);
+    img.balcony = img.pigeon.map(buildBalcony);
+    img.balcony.forEach(buildMask);
+  }
+
+  // Small iron balcony (drawn in code to match the fire escapes) with a pigeon on the rail.
+  // Mounted side is on the left; it is flipped for the right-hand building.
+  function buildBalcony(pigeon) {
+    const bw = 30, rail = pigeon.height - 1, bh = rail + 11;
+    const c = document.createElement("canvas");
+    c.width = bw; c.height = bh;
+    const g = c.getContext("2d");
+    const px = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(x, y, w, h); };
+    px(0, rail, bw, 2, "#1a1c2c");                                        // top rail
+    for (let x = 1; x < bw - 1; x += 3) px(x, rail + 2, 1, 5, "#3a4466"); // bars
+    px(bw - 1, rail, 1, 7, "#1a1c2c");                                    // end post
+    px(0, rail + 7, bw, 1, "#1a1c2c");                                    // slab
+    px(0, rail + 8, bw, 1, "#c0cbdc");
+    px(0, rail + 9, bw, 1, "#8b9bb4");
+    px(0, rail + 10, bw, 1, "#1a1c2c");
+    px(0, rail, 2, 11, "#1a1c2c");                                        // wall mount
+    g.drawImage(pigeon, bw - pigeon.width - 3, 0);
+    return c;
   }
 
   // ---------- audio (tiny synth, no files) ----------
@@ -108,14 +132,14 @@
     t: 0,
     score: 0,
     newBest: false,
-    hero: { x: W / 2, dir: 1, frame: 0 },
+    hero: { x: ALLEY_MID, dir: 1, frame: 0 },
     speed: 55,          // world scroll px/s
     hspeed: 70,         // hero sideways px/s
     toNext: 60,         // px of scroll until next spawn
     obs: [],
     fx: [],             // particles
     decor: [],          // background planes
-    cloudY: 0, roofY: 0,
+    wallY: 0,
     shake: 0,
     deadT: 0,
     scorePop: 0,
@@ -124,7 +148,7 @@
 
   function reset() {
     st.score = 0; st.newBest = false;
-    st.hero.x = W / 2; st.hero.dir = 1;
+    st.hero.x = ALLEY_MID; st.hero.dir = 1;
     st.speed = 55; st.hspeed = 70; st.toNext = 70;
     st.obs = []; st.fx = []; st.deadT = 0; st.shake = 0; st.scorePop = 0;
   }
@@ -135,12 +159,13 @@
     return fr[((o.anim * o.fps) | 0) % fr.length];
   }
 
+  // things mounted on a facade: a satellite dish or a balcony with a pigeon
   function addWall(side, y) {
-    const kind = Math.random() < 0.5 ? "dish" : "pigeon_roof";
+    const kind = Math.random() < 0.5 ? "dish" : "balcony";
     const f = img[kind][0];
     st.obs.push({
-      kind, x: side < 0 ? -2 : W - f.width + 2, y, vx: 0, vy: 0,
-      flip: side > 0, anim: Math.random(), fps: 2, scored: false,
+      kind, wall: true, x: side < 0 ? WALL_L - 2 : W - WALL_R - f.width + 2, y, vx: 0, vy: 0,
+      flip: side > 0, anim: Math.random() * 3, fps: kind === "balcony" ? 1.3 : 2, scored: false,
     });
   }
   function addBalloon(x, y) {
@@ -149,7 +174,7 @@
   function addBird(y) {
     const fromLeft = Math.random() < 0.5;
     const v = rand(35, 55) + Math.min(40, st.score * 0.8);
-    st.obs.push({ kind: "bird", x: fromLeft ? -16 : W + 1, y, vx: fromLeft ? v : -v, vy: 0, flip: !fromLeft, anim: 0, fps: 8, scored: false });
+    st.obs.push({ kind: "bird", x: fromLeft ? WALL_L - 15 : W - WALL_R, y, vx: fromLeft ? v : -v, vy: 0, flip: !fromLeft, anim: 0, fps: 8, scored: false });
   }
 
   function spawn() {
@@ -163,7 +188,7 @@
       case "wall": addWall(Math.random() < 0.5 ? -1 : 1, y); break;
       case "balloons": {
         const n = s > 15 ? 2 : 1;
-        for (let i = 0; i < n; i++) addBalloon(rand(24, W - 24), y + i * 18);
+        for (let i = 0; i < n; i++) addBalloon(rand(WALL_L + 14, W - WALL_R - 14), y + i * 18);
         break;
       }
       case "bird": addBird(y); break;
@@ -171,7 +196,7 @@
       case "squeeze": {
         const side = Math.random() < 0.5 ? -1 : 1;
         addWall(side, y);
-        addBalloon(side < 0 ? rand(110, 150) : rand(30, 70), y + 4);
+        addBalloon(side < 0 ? rand(100, 135) : rand(45, 80), y + 4);
         break;
       }
     }
@@ -262,8 +287,7 @@
     st.sky += (target - st.sky) * Math.min(1, dt * 1.5);
 
     const scroll = st.mode === "play" ? st.speed : st.mode === "menu" ? 18 : 0;
-    st.cloudY = (st.cloudY + scroll * 0.35 * dt) % H;
-    st.roofY = (st.roofY + scroll * 0.6 * dt) % H;
+    st.wallY = (st.wallY + scroll * dt) % 100;
 
     // background planes
     if (Math.random() < dt * 0.06 && st.decor.length < 1) {
@@ -281,7 +305,7 @@
       h.frame = ((st.t * 5) | 0) % 2;
       h.x += h.dir * st.hspeed * dt;
       const half = heroImage().width / 2;
-      h.x = Math.max(half - 8, Math.min(W - half + 8, h.x));
+      h.x = Math.max(WALL_L + half - 4, Math.min(W - WALL_R - half + 4, h.x));
 
       st.toNext -= st.speed * dt;
       if (st.toNext <= 0) spawn();
@@ -348,20 +372,35 @@
       if (st.sky > 0.01) draw(img.bg_dusk, 0, 0, false, st.sky);
     }
     for (const d of st.decor) draw(img.plane[0], d.x, d.y, d.vx < 0, 0.8);
+    if (st.mode === "menu") return;
 
-    if (st.mode !== "menu") {
-      // city walls fade in at dusk
-      if (st.sky > 0.05) {
-        const ry = -st.roofY;
-        draw(img.roofs, 0, ry, false, 0.55 * st.sky);
-        draw(img.roofs, 0, ry + H, false, 0.55 * st.sky);
-      }
-      const cy = -st.cloudY;
-      draw(img.clouds, 0, cy, false, 0.45);
-      draw(img.clouds, 0, cy + H, false, 0.45);
+    // free-flying things first, so birds come out from behind the buildings
+    for (const o of st.obs) if (!o.wall) draw(frameOf(o), o.x, o.y, o.flip);
+    drawFacades();
+    for (const o of st.obs) if (o.wall) draw(frameOf(o), o.x, o.y, o.flip);
+  }
+
+  function drawFacades() {
+    const L = img.facade_left, R = img.facade_right;
+    for (let y = -st.wallY; y < H; y += L.height) {
+      draw(L, 0, y);
+      draw(R, W - WALL_R, y);
     }
-
-    for (const o of st.obs) draw(frameOf(o), o.x, o.y, o.flip);
+    ctx.save();
+    if (st.sky > 0.01) {            // dusk light on the walls
+      ctx.globalAlpha = 0.35 * st.sky;
+      ctx.fillStyle = "#29366f";
+      ctx.fillRect(0, 0, WALL_L * S, H * S);
+      ctx.fillRect((W - WALL_R) * S, 0, WALL_R * S, H * S);
+    }
+    ctx.globalAlpha = 1;            // inner corner edge and soft shadow on the alley
+    ctx.fillStyle = "#1a1c2c";
+    ctx.fillRect((WALL_L - 1) * S, 0, S, H * S);
+    ctx.fillRect((W - WALL_R) * S, 0, S, H * S);
+    ctx.globalAlpha = 0.18;
+    ctx.fillRect(WALL_L * S, 0, 3 * S, H * S);
+    ctx.fillRect((W - WALL_R - 3) * S, 0, 3 * S, H * S);
+    ctx.restore();
   }
 
   function drawHero() {
@@ -439,7 +478,7 @@
       ctx.strokeStyle = "#41a6f6"; ctx.lineWidth = 1 * S;
       ctx.strokeRect((px + 3) * S, (py + 3) * S, (pw - 6) * S, (ph - 6) * S);
       ctx.restore();
-      text("KRAJ", W / 2, 130, 20, "#e43b44");
+      text("KRAJ", W / 2, 62, 20, "#e43b44");
       text("POENI", W / 2 - 34, py + 18, 7, "#94b0c2");
       text("REKORD", W / 2 + 34, py + 18, 7, "#94b0c2");
       text(String(st.score), W / 2 - 34, py + 38, 18, "#fff");

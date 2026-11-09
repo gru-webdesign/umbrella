@@ -1,6 +1,6 @@
 # Kišobran
 
-One-tap pixel art igrica za telefon. Lik pada sa kišobranom, a **tap menja smer vetra**, pa ga kišobran nosi levo ili desno. Prepreke (satelitske antene, krovovi sa golubovima, baloni, ptice) dolaze odozdo. Nema nivoa: igra se na rekord, a brzina raste sa svakim poenom.
+One-tap pixel art igrica za telefon. Lik pada sa kišobranom, a **tap menja smer vetra**, pa ga kišobran nosi levo ili desno. Padaš kroz uličicu između dve zgrade: satelitske antene i balkoni sa golubovima vire sa fasada, a baloni i ptice lete kroz sredinu. Nema nivoa: igra se na rekord, a brzina raste sa svakim poenom.
 
 ## Pokretanje
 

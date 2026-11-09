@@ -39,10 +39,18 @@
   "w": 33,
   "h": 25
  },
- "pigeon_roof": {
+ "pigeon": {
   "frames": 2,
-  "w": 23,
-  "h": 21
+  "w": 22,
+  "h": 14
+ },
+ "facade_left": {
+  "w": 30,
+  "h": 100
+ },
+ "facade_right": {
+  "w": 28,
+  "h": 100
  },
  "bg_day": {
   "w": 180,
