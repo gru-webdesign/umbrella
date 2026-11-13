@@ -60,6 +60,11 @@ jobs:
           name: umbrella-free-fall-apk
           path: umbrella-free-fall.apk
 
+      - name: Point the "latest" tag at this commit
+        run: |
+          git tag -f latest
+          git push -f origin refs/tags/latest
+
       - name: Publish to the "latest" release
         uses: softprops/action-gh-release@v2
         with:
